@@ -1,6 +1,7 @@
 module Main exposing (..)
 
-import Html exposing (Html, text, input, code, div)
+import Html exposing (Html, button, text, input, code, div, span)
+import Html.Events
 import Set exposing (Set)
 import List.Extra
 import Html.Attributes exposing (style)
@@ -20,7 +21,8 @@ type alias Model =
     { defaultCell : CellState
     , flippedCells : Set Cell
     , cellsInView : Viewport
-    , moveState : MoveState
+    , gameMode : GameMode
+    , selectedCell : Maybe Cell
     }
 
 
@@ -33,24 +35,28 @@ type CellState
 -- What kind of type would make it impossible to select a cell that doesn't contain a chip?
 
 
-type MoveState
+type GameMode
     = NoneSelected
     | CellSelected Cell
+    | Pregame
 
 
 defaults : Model
 defaults =
-    { defaultCell = Filled
-    , flippedCells = Set.fromList [ ( 0, 0 ) ]
+    { defaultCell = Empty
+    , flippedCells = Set.fromList [ ( 0, 0 ), ( 0, 1 ), ( 1, 0 ), ( 2, 0 ) ]
     , cellsInView = viewportFromCells ( 8, 8 ) ( -8, -8 )
-    , moveState = NoneSelected
+    , gameMode = Pregame
+    , selectedCell = Nothing
     }
 
 
 type Msg
-    = NoAction
-    | SelectCell Cell
+    = SelectCell Cell
+    | DeselectAll
     | MoveChip Cell Direction
+    | ExitPregame
+    | ToggleDefaultFill
 
 
 type Direction
@@ -62,16 +68,82 @@ type Direction
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    ( model, Cmd.none )
+    case msg of
+        SelectCell cell ->
+            Debug.crash "todo"
+
+        DeselectAll ->
+            ( { model | selectedCell = Nothing }, Cmd.none )
+
+        MoveChip cell direction ->
+            Debug.crash "todo"
+
+        ExitPregame ->
+            ( { model | gameMode = NoneSelected }, Cmd.none )
+
+        ToggleDefaultFill ->
+            ( { model | defaultCell = flipState model.defaultCell }, Cmd.none )
 
 
 view : Model -> Html Msg
 view model =
+    div []
+        [ viewBoard model
+        , viewGameMode model.gameMode
+        , viewFillToggler model.gameMode model.defaultCell
+        ]
+
+
+viewGameMode : GameMode -> Html Msg
+viewGameMode mode =
+    div []
+        [ case mode of
+            Pregame ->
+                button [ Html.Events.onClick ExitPregame ] [ text "Begin Game" ]
+
+            NoneSelected ->
+                text "Select a chip to move."
+
+            CellSelected _ ->
+                text "Make a move with this chip."
+        ]
+
+
+viewFillToggler : GameMode -> CellState -> Html Msg
+viewFillToggler mode state =
+    case mode of
+        Pregame ->
+            span
+                []
+                [ text "Starting with the board: "
+                , button [ Html.Events.onClick ToggleDefaultFill ]
+                    [ text <|
+                        case state of
+                            Empty ->
+                                "Empty"
+
+                            Filled ->
+                                "Filled"
+                    ]
+                ]
+
+        _ ->
+            span [] []
+
+
+viewBoard : Model -> Html Msg
+viewBoard model =
     let
         unfolded =
             unfoldBoard model.defaultCell model.flippedCells model.cellsInView
     in
-        div [ style [ ( "font-family", "monospace" ) ] ] (List.map viewRow unfolded)
+        div
+            [ style
+                [ ( "font-family", "monospace" )
+                , ( "user-select", "none" )
+                ]
+            ]
+            (List.map viewRow unfolded)
 
 
 cellSize : String
