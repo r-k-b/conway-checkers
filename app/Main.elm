@@ -4,6 +4,7 @@ import Html exposing (Html, text, input, code, div)
 import Set exposing (Set)
 import List.Extra
 import Html.Attributes exposing (style)
+import Viewport exposing (Cell, Viewport, cellX, cellY, viewportFromCells)
 
 
 main =
@@ -23,10 +24,6 @@ type alias Model =
     }
 
 
-type alias Cell =
-    ( Int, Int )
-
-
 type CellState
     = Empty
     | Filled
@@ -41,17 +38,11 @@ type MoveState
     | CellSelected Cell
 
 
-type alias Viewport =
-    { min : Cell
-    , max : Cell
-    }
-
-
 defaults : Model
 defaults =
     { defaultCell = Empty
     , flippedCells = Set.fromList [ ( 0, 0 ) ]
-    , cellsInView = { min = ( -8, -8 ), max = ( 8, 8 ) }
+    , cellsInView = viewportFromCells ( 8, 8 ) ( -8, -8 )
     , moveState = NoneSelected
     }
 
@@ -98,16 +89,6 @@ subscriptions model =
     Sub.none
 
 
-cellX : Cell -> Int
-cellX =
-    Tuple.first
-
-
-cellY : Cell -> Int
-cellY =
-    Tuple.second
-
-
 flip : CellState -> CellState
 flip state =
     case state of
@@ -120,7 +101,7 @@ flip state =
 
 unfoldRow : CellState -> Int -> Set Cell -> Viewport -> Int -> Maybe ( CellState, Int )
 unfoldRow defaultState y flippedCells viewport nextX =
-    if nextX > (viewport.max |> cellX) then
+    if nextX > (Viewport.maxCell viewport |> cellX) then
         Nothing
     else if Set.member ( nextX, y ) flippedCells then
         Just ( flip defaultState, nextX + 1 )
@@ -130,15 +111,15 @@ unfoldRow defaultState y flippedCells viewport nextX =
 
 unfoldRows : CellState -> Set Cell -> Viewport -> Int -> Maybe ( List CellState, Int )
 unfoldRows defaultState flippedCells viewport nextY =
-    if nextY > (viewport.max |> cellY) then
+    if nextY > (Viewport.maxCell viewport |> cellY) then
         Nothing
     else
         Just
-            ( List.Extra.unfoldr (unfoldRow defaultState nextY flippedCells viewport) (viewport.min |> cellX)
+            ( List.Extra.unfoldr (unfoldRow defaultState nextY flippedCells viewport) (Viewport.minCell viewport |> cellX)
             , nextY + 1
             )
 
 
 unfoldBoard : CellState -> Set Cell -> Viewport -> List (List CellState)
 unfoldBoard defaultState flippedCells viewport =
-    List.Extra.unfoldr (unfoldRows defaultState flippedCells viewport) (viewport.min |> cellY)
+    List.Extra.unfoldr (unfoldRows defaultState flippedCells viewport) (Viewport.minCell viewport |> cellY)
