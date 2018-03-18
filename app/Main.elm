@@ -22,7 +22,7 @@ type alias Model =
     , flippedCells : Set Cell
     , cellsInView : Viewport
     , gameMode : GameMode
-    , selectedCell : Maybe Cell
+    , selectedCell : Maybe ( Cell, LegalMoves )
     }
 
 
@@ -46,7 +46,7 @@ defaults =
     { defaultCell = Empty
     , flippedCells = Set.fromList [ ( 0, 0 ), ( 0, 1 ), ( 1, 0 ), ( 2, 0 ) ]
     , cellsInView = viewportFromCells ( 8, 8 ) ( -8, -8 )
-    , gameMode = Pregame
+    , gameMode = NoneSelected
     , selectedCell = Nothing
     }
 
@@ -79,12 +79,29 @@ update msg model =
 
                 NoneSelected ->
                     if cell |> hasChip model.defaultCell model.flippedCells then
-                        ( { model | selectedCell = Just cell }, Cmd.none )
+                        ( { model
+                            | selectedCell = Just ( cell, legalMovesForCell model.defaultCell model.flippedCells cell )
+                            , gameMode = CellSelected cell
+                          }
+                        , Cmd.none
+                        )
                     else
-                        ( { model | selectedCell = Nothing }, Cmd.none )
+                        ( { model | selectedCell = Nothing }
+                        , Cmd.none
+                        )
 
-                _ ->
-                    Debug.crash "todo"
+                CellSelected oldCell ->
+                    if cell |> hasChip model.defaultCell model.flippedCells then
+                        ( { model
+                            | selectedCell = Just ( cell, legalMovesForCell model.defaultCell model.flippedCells cell )
+                            , gameMode = CellSelected cell
+                          }
+                        , Cmd.none
+                        )
+                    else
+                        ( { model | selectedCell = Nothing }
+                        , Cmd.none
+                        )
 
         DeselectAll ->
             ( { model | selectedCell = Nothing }, Cmd.none )
@@ -162,6 +179,7 @@ viewBoard model =
             [ style
                 [ ( "font-family", "monospace" )
                 , ( "user-select", "none" )
+                , ( "zoom", "2" )
                 ]
             ]
             (List.map (viewRow model.selectedCell) unfolded)
@@ -172,19 +190,20 @@ cellSize =
     "2em"
 
 
-viewRow : Maybe Cell -> List ( Cell, CellState ) -> Html Msg
+viewRow : Maybe ( Cell, LegalMoves ) -> List ( Cell, CellState ) -> Html Msg
 viewRow selectedCell row =
     div
         [ style
             [ ( "margin", "0" )
             , ( "padding", "0" )
             , ( "height", cellSize )
+            , ( "white-space", "nowrap" )
             ]
         ]
         (List.map (viewCell selectedCell) row)
 
 
-viewCell : Maybe Cell -> ( Cell, CellState ) -> Html Msg
+viewCell : Maybe ( Cell, LegalMoves ) -> ( Cell, CellState ) -> Html Msg
 viewCell selectedCell ( address, cell ) =
     let
         isBlack =
@@ -193,10 +212,21 @@ viewCell selectedCell ( address, cell ) =
         inner =
             case cell of
                 Empty ->
-                    " "
+                    []
 
                 Filled ->
-                    "⛂"
+                    [ div
+                        [ style
+                            [ ( "position", "absolute" )
+                            , ( "top", "0" )
+                            , ( "bottom", "0" )
+                            , ( "left", "0" )
+                            , ( "right", "0" )
+                            ]
+                        ]
+                        [ text "⛂"
+                        ]
+                    ]
 
         background =
             if isBlack then
@@ -205,7 +235,7 @@ viewCell selectedCell ( address, cell ) =
                 []
 
         isSelected =
-            Maybe.map ((==) address) selectedCell
+            Maybe.map (Tuple.first >> (==) address) selectedCell
                 |> Maybe.withDefault False
 
         selectedStyle =
@@ -214,16 +244,38 @@ viewCell selectedCell ( address, cell ) =
             else
                 []
 
+        moveIndicators : List (Html Msg)
+        moveIndicators =
+            if isSelected then
+                case selectedCell of
+                    Nothing ->
+                        []
+
+                    Just ( _, legalMoves ) ->
+                        (viewMoveIndicator address legalMoves.up Up)
+                            ++ (viewMoveIndicator address legalMoves.down Down)
+                            ++ (viewMoveIndicator address legalMoves.left Left)
+                            ++ (viewMoveIndicator address legalMoves.right Right)
+            else
+                []
+
         cellStyle =
             style
                 ([ ( "display", "inline-block" )
+                 , ( "position", "relative" )
                  , ( "width", cellSize )
                  , ( "height", cellSize )
-                 , ( "overflow", "hidden" )
+                 , ( "overflow", "visible" )
                  , ( "text-align", "center" )
                  , ( "margin", "0" )
                  , ( "padding", "0" )
                  , ( "box-sizing", "border-box" )
+                 , ( "opacity"
+                   , if isSelected then
+                        "1"
+                     else
+                        "0.2"
+                   )
                  ]
                     ++ background
                     ++ selectedStyle
@@ -234,7 +286,7 @@ viewCell selectedCell ( address, cell ) =
             , attribute "data-cell-address" (address |> toString)
             , Html.Events.onClick (SelectCell address)
             ]
-            [ text inner ]
+            (inner ++ moveIndicators)
 
 
 subscriptions : Model -> Sub Msg
@@ -389,6 +441,8 @@ right by cell =
     left (by * -1) cell
 
 
+{-| todo: write tests for legalMovesForCell
+-}
 legalMovesForCell : CellState -> Set Cell -> Cell -> LegalMoves
 legalMovesForCell defaultState flippedCells address =
     let
@@ -397,9 +451,68 @@ legalMovesForCell defaultState flippedCells address =
 
         centralChip =
             chipAt address
+
+        x =
+            [ Debug.log <| toString <| centralChip
+            ]
     in
         { up = centralChip && chipAt (address |> up 1) && (not <| chipAt (address |> up 2))
         , down = centralChip && chipAt (address |> down 1) && (not <| chipAt (address |> down 2))
         , left = centralChip && chipAt (address |> left 1) && (not <| chipAt (address |> left 2))
         , right = centralChip && chipAt (address |> right 1) && (not <| chipAt (address |> right 2))
         }
+
+
+viewMoveIndicator : Cell -> Bool -> Direction -> List (Html Msg)
+viewMoveIndicator cell legal direction =
+    let
+        events =
+            if legal then
+                [ Html.Events.onClick <| MoveChip cell direction ]
+            else
+                []
+
+        opacity =
+            if legal then
+                "1"
+            else
+                "0.2"
+
+        transform =
+            case direction of
+                Up ->
+                    "translateY(-100%)"
+
+                Down ->
+                    "translateY(100%) rotate(180deg)"
+
+                Left ->
+                    "translateX(-100%) rotate(270deg)"
+
+                Right ->
+                    "translateX(100%) rotate(90deg)"
+
+        bgc =
+            if legal then
+                "green"
+            else
+                "red"
+    in
+        [ div
+            (events
+                ++ [ style
+                        [ ( "position", "absolute" )
+                        , ( "top", "0" )
+                        , ( "bottom", "0" )
+                        , ( "left", "0" )
+                        , ( "right", "0" )
+                        , ( "transform", transform )
+                        , ( "mix-blend-mode", "difference" )
+                        , ( "color", "blue" )
+                        , ( "background-color", bgc )
+                        , ( "opacity", opacity )
+                        ]
+                   ]
+            )
+            [ text "↑" ]
+        ]
