@@ -4,7 +4,7 @@ import Html exposing (Html, button, text, input, code, div, span)
 import Html.Events
 import Set exposing (Set)
 import List.Extra
-import Html.Attributes exposing (style)
+import Html.Attributes exposing (attribute, style)
 import Viewport exposing (Cell, Viewport, cellX, cellY, viewportFromCells)
 
 
@@ -70,7 +70,15 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         SelectCell cell ->
-            Debug.crash "todo"
+            case model.gameMode of
+                Pregame ->
+                    if cell |> isAboveGoal then
+                        ( model, Cmd.none )
+                    else
+                        ( { model | flippedCells = toggle model.flippedCells cell }, Cmd.none )
+
+                _ ->
+                    Debug.crash "todo"
 
         DeselectAll ->
             ( { model | selectedCell = Nothing }, Cmd.none )
@@ -88,10 +96,17 @@ update msg model =
 view : Model -> Html Msg
 view model =
     div []
-        [ viewBoard model
-        , viewGameMode model.gameMode
-        , viewFillToggler model.gameMode model.defaultCell
-        ]
+        ([ viewBoard model
+         , viewGameMode model.gameMode
+         ]
+            ++ case model.gameMode of
+                Pregame ->
+                    [ viewFillToggler model.gameMode model.defaultCell
+                    ]
+
+                _ ->
+                    [ viewScore model.flippedCells ]
+        )
 
 
 viewGameMode : GameMode -> Html Msg
@@ -182,9 +197,9 @@ viewCell ( address, cell ) =
                 [ ( "background-color", "black" ), ( "color", "white" ) ]
             else
                 []
-    in
-        div
-            [ style
+
+        cellStyle =
+            style
                 ([ ( "display", "inline-block" )
                  , ( "width", cellSize )
                  , ( "height", cellSize )
@@ -195,7 +210,11 @@ viewCell ( address, cell ) =
                  ]
                     ++ background
                 )
-            , Html.Attributes.attribute "data-cell-address" (address |> toString)
+    in
+        div
+            [ cellStyle
+            , attribute "data-cell-address" (address |> toString)
+            , Html.Events.onClick (SelectCell address)
             ]
             [ text inner ]
 
@@ -257,3 +276,33 @@ unfoldRows defaultState flippedCells viewport nextY =
 unfoldBoard : CellState -> Set Cell -> Viewport -> List (List ( Cell, CellState ))
 unfoldBoard defaultState flippedCells viewport =
     List.Extra.unfoldr (unfoldRows defaultState flippedCells viewport) (Viewport.minCell viewport |> cellY)
+
+
+isAboveGoal : Cell -> Bool
+isAboveGoal cell =
+    (cell |> cellY) < 0
+
+
+toggle : Set Cell -> Cell -> Set Cell
+toggle old address =
+    if old |> Set.member address then
+        Set.remove address old
+    else
+        Set.insert address old
+
+
+getScore : Set Cell -> Int
+getScore flippedCells =
+    let
+        highest : Cell -> Int -> Int
+        highest cell prior =
+            min (cell |> cellY) prior
+    in
+        Set.foldr highest 0 flippedCells
+            |> (*) -1
+
+
+viewScore : Set Cell -> Html Msg
+viewScore flippedCells =
+    div []
+        [ text <| "Highest row reached: " ++ (getScore flippedCells |> toString) ]
