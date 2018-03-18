@@ -65,23 +65,58 @@ view model =
         div [ style [ ( "font-family", "monospace" ) ] ] (List.map viewRow unfolded)
 
 
-viewRow : List CellState -> Html Msg
+cellSize : String
+cellSize =
+    "2em"
+
+
+viewRow : List ( Cell, CellState ) -> Html Msg
 viewRow row =
-    div [] (List.map viewCell row)
+    div
+        [ style
+            [ ( "margin", "0" )
+            , ( "padding", "0" )
+            , ( "height", cellSize )
+            ]
+        ]
+        (List.map viewCell row)
 
 
-viewCell : CellState -> Html Msg
-viewCell cell =
+viewCell : ( Cell, CellState ) -> Html Msg
+viewCell ( address, cell ) =
     let
+        isBlack =
+            ((address |> cellX) + (address |> cellY)) % 2 == 0
+
         inner =
             case cell of
                 Empty ->
-                    "."
+                    " "
 
                 Filled ->
                     "⛂"
+
+        background =
+            if isBlack then
+                [ ( "background-color", "black" ), ( "color", "white" ) ]
+            else
+                []
     in
-        div [ style [ ( "display", "inline-block" ), ( "width", "1em" ), ( "text-align", "center" ) ] ] [ text inner ]
+        div
+            [ style
+                ([ ( "display", "inline-block" )
+                 , ( "width", cellSize )
+                 , ( "height", cellSize )
+                 , ( "overflow", "hidden" )
+                 , ( "text-align", "center" )
+                 , ( "margin", "0" )
+                 , ( "padding", "0" )
+                 ]
+                    ++ background
+                )
+            , Html.Attributes.attribute "data-cell-address" (address |> toString)
+            ]
+            [ text inner ]
 
 
 subscriptions : Model -> Sub Msg
@@ -99,17 +134,28 @@ flip state =
             Empty
 
 
-unfoldRow : CellState -> Int -> Set Cell -> Viewport -> Int -> Maybe ( CellState, Int )
+unfoldRow : CellState -> Int -> Set Cell -> Viewport -> Int -> Maybe ( ( Cell, CellState ), Int )
 unfoldRow defaultState y flippedCells viewport nextX =
     if nextX > (Viewport.maxCell viewport |> cellX) then
         Nothing
-    else if Set.member ( nextX, y ) flippedCells then
-        Just ( flip defaultState, nextX + 1 )
     else
-        Just ( defaultState, nextX + 1 )
+        let
+            address =
+                ( nextX, y )
+        in
+            if Set.member ( nextX, y ) flippedCells then
+                Just
+                    ( ( address, flip defaultState )
+                    , nextX + 1
+                    )
+            else
+                Just
+                    ( ( address, defaultState )
+                    , nextX + 1
+                    )
 
 
-unfoldRows : CellState -> Set Cell -> Viewport -> Int -> Maybe ( List CellState, Int )
+unfoldRows : CellState -> Set Cell -> Viewport -> Int -> Maybe ( List ( Cell, CellState ), Int )
 unfoldRows defaultState flippedCells viewport nextY =
     if nextY > (Viewport.maxCell viewport |> cellY) then
         Nothing
@@ -120,6 +166,6 @@ unfoldRows defaultState flippedCells viewport nextY =
             )
 
 
-unfoldBoard : CellState -> Set Cell -> Viewport -> List (List CellState)
+unfoldBoard : CellState -> Set Cell -> Viewport -> List (List ( Cell, CellState ))
 unfoldBoard defaultState flippedCells viewport =
     List.Extra.unfoldr (unfoldRows defaultState flippedCells viewport) (Viewport.minCell viewport |> cellY)
