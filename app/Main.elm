@@ -1,6 +1,6 @@
 module Main exposing (..)
 
-import Html exposing (Html, button, text, input, code, div, span)
+import Html exposing (Html, button, text, input, code, div, span, br)
 import Html.Events
 import Set exposing (Set)
 import List.Extra
@@ -77,6 +77,12 @@ update msg model =
                     else
                         ( { model | flippedCells = toggle model.flippedCells cell }, Cmd.none )
 
+                NoneSelected ->
+                    if cell |> hasChip model.defaultCell model.flippedCells then
+                        ( { model | selectedCell = Just cell }, Cmd.none )
+                    else
+                        ( { model | selectedCell = Nothing }, Cmd.none )
+
                 _ ->
                     Debug.crash "todo"
 
@@ -105,7 +111,7 @@ view model =
                     ]
 
                 _ ->
-                    [ viewScore model.flippedCells ]
+                    [ viewScore model.defaultCell model.flippedCells ]
         )
 
 
@@ -158,7 +164,7 @@ viewBoard model =
                 , ( "user-select", "none" )
                 ]
             ]
-            (List.map viewRow unfolded)
+            (List.map (viewRow model.selectedCell) unfolded)
 
 
 cellSize : String
@@ -166,8 +172,8 @@ cellSize =
     "2em"
 
 
-viewRow : List ( Cell, CellState ) -> Html Msg
-viewRow row =
+viewRow : Maybe Cell -> List ( Cell, CellState ) -> Html Msg
+viewRow selectedCell row =
     div
         [ style
             [ ( "margin", "0" )
@@ -175,11 +181,11 @@ viewRow row =
             , ( "height", cellSize )
             ]
         ]
-        (List.map viewCell row)
+        (List.map (viewCell selectedCell) row)
 
 
-viewCell : ( Cell, CellState ) -> Html Msg
-viewCell ( address, cell ) =
+viewCell : Maybe Cell -> ( Cell, CellState ) -> Html Msg
+viewCell selectedCell ( address, cell ) =
     let
         isBlack =
             ((address |> cellX) + (address |> cellY)) % 2 == 0
@@ -198,6 +204,16 @@ viewCell ( address, cell ) =
             else
                 []
 
+        isSelected =
+            Maybe.map ((==) address) selectedCell
+                |> Maybe.withDefault False
+
+        selectedStyle =
+            if isSelected then
+                [ ( "border", "2px solid green" ) ]
+            else
+                []
+
         cellStyle =
             style
                 ([ ( "display", "inline-block" )
@@ -207,8 +223,10 @@ viewCell ( address, cell ) =
                  , ( "text-align", "center" )
                  , ( "margin", "0" )
                  , ( "padding", "0" )
+                 , ( "box-sizing", "border-box" )
                  ]
                     ++ background
+                    ++ selectedStyle
                 )
     in
         div
@@ -302,7 +320,86 @@ getScore flippedCells =
             |> (*) -1
 
 
-viewScore : Set Cell -> Html Msg
-viewScore flippedCells =
+viewScore : CellState -> Set Cell -> Html Msg
+viewScore defaultState flippedCells =
     div []
-        [ text <| "Highest row reached: " ++ (getScore flippedCells |> toString) ]
+        [ text <| "Highest row reached: " ++ (getScore flippedCells |> toString)
+        , br [] []
+        , text <| "Chips remaining: " ++ (countChipsRemaining defaultState flippedCells |> toString)
+        ]
+
+
+hasChip : CellState -> Set Cell -> Cell -> Bool
+hasChip defaultState flippedCells address =
+    let
+        isFlipped =
+            Set.member address flippedCells
+    in
+        if isAboveGoal address then
+            isFlipped
+        else
+            case defaultState of
+                Empty ->
+                    isFlipped
+
+                Filled ->
+                    not isFlipped
+
+
+infinity : Float
+infinity =
+    (1 / 0)
+
+
+countChipsRemaining : CellState -> Set Cell -> Float
+countChipsRemaining defaultState flippedCells =
+    case defaultState of
+        Filled ->
+            infinity
+
+        Empty ->
+            Set.size flippedCells |> toFloat
+
+
+type alias LegalMoves =
+    { up : Bool
+    , down : Bool
+    , left : Bool
+    , right : Bool
+    }
+
+
+up : Int -> Cell -> Cell
+up by cell =
+    ( cell |> cellX, (cell |> cellY) - 1 )
+
+
+down : Int -> Cell -> Cell
+down by cell =
+    up (by * -1) cell
+
+
+left : Int -> Cell -> Cell
+left by cell =
+    ( (cell |> cellX) - 1, cell |> cellY )
+
+
+right : Int -> Cell -> Cell
+right by cell =
+    left (by * -1) cell
+
+
+legalMovesForCell : CellState -> Set Cell -> Cell -> LegalMoves
+legalMovesForCell defaultState flippedCells address =
+    let
+        chipAt =
+            hasChip defaultState flippedCells
+
+        centralChip =
+            chipAt address
+    in
+        { up = centralChip && chipAt (address |> up 1) && (not <| chipAt (address |> up 2))
+        , down = centralChip && chipAt (address |> down 1) && (not <| chipAt (address |> down 2))
+        , left = centralChip && chipAt (address |> left 1) && (not <| chipAt (address |> left 2))
+        , right = centralChip && chipAt (address |> right 1) && (not <| chipAt (address |> right 2))
+        }
