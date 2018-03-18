@@ -40,7 +40,7 @@ type MoveState
 
 defaults : Model
 defaults =
-    { defaultCell = Empty
+    { defaultCell = Filled
     , flippedCells = Set.fromList [ ( 0, 0 ) ]
     , cellsInView = viewportFromCells ( 8, 8 ) ( -8, -8 )
     , moveState = NoneSelected
@@ -49,6 +49,15 @@ defaults =
 
 type Msg
     = NoAction
+    | SelectCell Cell
+    | MoveChip Cell Direction
+
+
+type Direction
+    = Up -- = -y
+    | Down -- = +y
+    | Left -- = -x
+    | Right -- = +x
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -124,8 +133,8 @@ subscriptions model =
     Sub.none
 
 
-flip : CellState -> CellState
-flip state =
+flipState : CellState -> CellState
+flipState state =
     case state of
         Empty ->
             Filled
@@ -145,7 +154,7 @@ unfoldRow defaultState y flippedCells viewport nextX =
         in
             if Set.member ( nextX, y ) flippedCells then
                 Just
-                    ( ( address, flip defaultState )
+                    ( ( address, flipState defaultState )
                     , nextX + 1
                     )
             else
@@ -160,10 +169,17 @@ unfoldRows defaultState flippedCells viewport nextY =
     if nextY > (Viewport.maxCell viewport |> cellY) then
         Nothing
     else
-        Just
-            ( List.Extra.unfoldr (unfoldRow defaultState nextY flippedCells viewport) (Viewport.minCell viewport |> cellX)
-            , nextY + 1
-            )
+        let
+            rowDefaultState =
+                if nextY < 0 then
+                    Empty
+                else
+                    defaultState
+        in
+            Just
+                ( List.Extra.unfoldr (unfoldRow rowDefaultState nextY flippedCells viewport) (Viewport.minCell viewport |> cellX)
+                , nextY + 1
+                )
 
 
 unfoldBoard : CellState -> Set Cell -> Viewport -> List (List ( Cell, CellState ))
